@@ -395,6 +395,8 @@ int main(int argc, char **argv)
   	MPI_Status status;
 
   	double *image;
+  	double *img;
+  	double *temp_buff;
   	if(rang==0){
   		 image= malloc(3 * w * h * sizeof(*image));
 		if (image == NULL) {
@@ -402,7 +404,12 @@ int main(int argc, char **argv)
 			exit(1);
 		}
   	}
-  	img=malloc(3*w*h/size*sizeof(double));
+  	if(rang==size-1){
+  		img=malloc((3*w*h/size +3*w*h%size)*sizeof(double)); //Si le nombre de pixel de l'image n'est pas un multiple du nombre de procesus, le dernier process prend les pixels qui restent
+  	}else{
+  		img=malloc(3*w*h/size*sizeof(double));
+  	}
+  	
 	if (img == NULL) {
 		perror("Impossible d'allouer de l'espace dans un process\n");
 		exit(1);
@@ -411,7 +418,7 @@ int main(int argc, char **argv)
 	
 
 	int start=w*h/size*rang;
-	int end=start+w*h/size;
+	int end=(rang==size-1)? start + w*h/size + w*h%size : start+w*h/size;
 	int actual=start;
 	int hini=start/w;
 	int wini=start%w;
@@ -421,47 +428,71 @@ int main(int argc, char **argv)
 	int nmb_ligne_img=hfin-hini;
 	bool continu=true;
 
+	int count;
+	int flag=0;
+	int num_process;
+	int process_aide;
+	int temp;
+
 	while(continu){
 
 		while(actual<end){
 
-		int i=actual/w;
-		int j=actual%w;
-		unsigned short PRNG_state[3] = {0, 0, i*i*i};
-		double pixel_radiance[3] = {0, 0, 0};
-			for (int sub_i = 0; sub_i < 2; sub_i++) {
-				for (int sub_j = 0; sub_j < 2; sub_j++) {
-					double subpixel_radiance[3] = {0, 0, 0};
-					/* simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne */
-					for (int s = 0; s < samples; s++) { 
-						/* tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer */
-						double r1 = 2 * erand48(PRNG_state);
-						double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
-						double r2 = 2 * erand48(PRNG_state);
-						double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-						double ray_direction[3];
-						copy(camera_direction, ray_direction);
-						axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
-						axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
-						normalize(ray_direction);
+			int i=actual/w;
+			int j=actual%w;
+			unsigned short PRNG_state[3] = {0, 0, i*i*i};
+			double pixel_radiance[3] = {0, 0, 0};
+				for (int sub_i = 0; sub_i < 2; sub_i++) {
+					for (int sub_j = 0; sub_j < 2; sub_j++) {
+						double subpixel_radiance[3] = {0, 0, 0};
+						/* simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne */
+						for (int s = 0; s < samples; s++) { 
+							/* tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer */
+							double r1 = 2 * erand48(PRNG_state);
+							double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
+							double r2 = 2 * erand48(PRNG_state);
+							double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+							double ray_direction[3];
+							copy(camera_direction, ray_direction);
+							axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
+							axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
+							normalize(ray_direction);
 
-						double ray_origin[3];
-						copy(camera_position, ray_origin);
-						axpy(140, ray_direction, ray_origin);
+							double ray_origin[3];
+							copy(camera_position, ray_origin);
+							axpy(140, ray_direction, ray_origin);
 						
-						/* estime la lumiance qui arrive sur la caméra par ce rayon */
-						double sample_radiance[3];
-						radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
-						/* fait la moyenne sur tous les rayons */
-						axpy(1. / samples, sample_radiance, subpixel_radiance);
+							/* estime la lumiance qui arrive sur la caméra par ce rayon */
+							double sample_radiance[3];
+							radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
+							/* fait la moyenne sur tous les rayons */
+							axpy(1. / samples, sample_radiance, subpixel_radiance);
+						}
+						clamp(subpixel_radiance);
+						/* fait la moyenne sur les 4 sous-pixels */
+						axpy(0.25, subpixel_radiance, pixel_radiance);
 					}
-					clamp(subpixel_radiance);
-					/* fait la moyenne sur les 4 sous-pixels */
-					axpy(0.25, subpixel_radiance, pixel_radiance);
 				}
-			}
 			copy(pixel_radiance, img + 3 * (actuel-start)); // <-- retournement vertical
-
+			
+			
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status)
+			if(flag){ //Si on reçoit un message
+				process_aide=status.MPI_TAG;
+				
+				if(process_aide<size){ // si il s'agit d'un processus qui propose son aide
+					MPI_Get_count(&status, MPI_UNSIGNED_CHAR, &count);
+     				num_process= status.MPI_SOURCE;
+     				
+     				temp=(end-actual)/2;
+     				if(temp>0){
+     					
+     					MPI_Send(img+active+temp+(end-actual)%2, temp, MPI_DOUBLE, process_aide, size/*tag*/, MPI_COMM_WORLD); 
+     				}
+     			}
+     			
+			}
+			actual++;
 		}
 
 	}
