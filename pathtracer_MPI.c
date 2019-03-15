@@ -396,7 +396,9 @@ int main(int argc, char **argv)
 
   	double *image;
   	double *img;
-  	double *temp_buff;
+  	double *travail_vole;
+  	double *travail_faire=img;//contient le travail que le processus doit faire à un instant t. Au début, cela correspond à la portion de l'image qui lui a été donnée.
+  	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
   	if(rang==0){
   		 image= malloc(3 * w * h * sizeof(*image));
 		if (image == NULL) {
@@ -432,7 +434,8 @@ int main(int argc, char **argv)
 	int flag=0;
 	int num_process;
 	int process_aide;
-	int temp;
+	int temp=0;
+
 
 	while(continu){
 
@@ -473,29 +476,46 @@ int main(int argc, char **argv)
 						axpy(0.25, subpixel_radiance, pixel_radiance);
 					}
 				}
-			copy(pixel_radiance, img + 3 * (actuel-start)); // <-- retournement vertical
+			copy(pixel_radiance, img + 3 * (actual-start)); // <-- retournement vertical
 			
 			
-			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status)
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
 			if(flag){ //Si on reçoit un message
 				process_aide=status.MPI_TAG;
-				
+     			num_process= status.MPI_SOURCE;
 				if(process_aide<size){ // si il s'agit d'un processus qui propose son aide
-					MPI_Get_count(&status, MPI_UNSIGNED_CHAR, &count);
-     				num_process= status.MPI_SOURCE;
+					MPI_Get_count(&status, MPI_INTEGER, &count);
+
      				
      				temp=(end-actual)/2;
-     				if(temp>0){
+     				if(temp>1){//Si on a du travail à lui donner
      					
-     					MPI_Send(img+active+temp+(end-actual)%2, temp, MPI_DOUBLE, process_aide, size/*tag*/, MPI_COMM_WORLD); 
-     				}
+     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_aide, size/*tag*/, MPI_COMM_WORLD); 
+     					end=img+((actual-start)+temp+(end-actual)%2)*3;
+     					reper_process[process_aide]=end;
+
+     				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_aide/*tag*/, MPI_COMM_WORLD); 
+
+     					}
+     			}else if(process_aide==size+1){
+					MPI_Get_count(&status, MPI_DOUBLE, &count);
+
+     				MPI_Recv(reper_process[num_process], count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
      			}
      			
 			}
 			actual++;
 		}
 
+
+
+
 	}
+
+
+	free(reper_process);
 	
 	/* boucle principale */
 	for (int i = 0; i < h; i++) {

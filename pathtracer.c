@@ -375,7 +375,7 @@ int main(int argc, char **argv)
 
 	/* précalcule la norme infinie des couleurs */
 	int n = sizeof(spheres) / sizeof(struct Sphere); //Nombre de sphères dans le tableau sphère
-	for (int i = 0; i < n; i++) {//La valeure la plus élevé parmis les 3 composantes RGB deviet la valeure de la reflexivité
+	for (int i = 0; i < n; i++) {//La valeure la plus élevé parmis les 3 composantes RGB devient la valeure de la reflexivité
 		double *f = spheres[i].color;
 		if ((f[0] > f[1]) && (f[0] > f[2]))
 			spheres[i].max_reflexivity = f[0]; 
