@@ -121,6 +121,13 @@ static inline void clamp(double *x)
 	}
 } 
 
+
+static inline void copy_tab(const double *x, double *y, int count){
+	for (int i = 0; i < count; ++i)
+	{
+		copy(x+3*i, y+3*i);
+	}
+}
 /******************************* calcul des intersections rayon / sphere *************************************/
    
 // returns distance, 0 if nohit 
@@ -398,6 +405,7 @@ int main(int argc, char **argv)
   	double *img;
   	double *travail_vole;
   	double *travail_faire=img;//contient le travail que le processus doit faire à un instant t. Au début, cela correspond à la portion de l'image qui lui a été donnée.
+  	double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
   	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
   	if(rang==0){
   		 image= malloc(3 * w * h * sizeof(*image));
@@ -429,14 +437,15 @@ int main(int argc, char **argv)
 	//int nmb_colone_img=
 	int nmb_ligne_img=hfin-hini;
 	bool continu=true;
+	bool temp_bool=true;
 
 	int count;
 	int flag=0;
 	int num_process;
-	int process_aide;
+	int process_tag; //tag ayant pour valeure le rang d'un process; généralement rang du process qui souhaite voler du travail
 	int temp=0;
 
-
+	int process_aidee=(rang+1)%size;
 	while(continu){
 
 		while(actual<end){
@@ -448,9 +457,9 @@ int main(int argc, char **argv)
 				for (int sub_i = 0; sub_i < 2; sub_i++) {
 					for (int sub_j = 0; sub_j < 2; sub_j++) {
 						double subpixel_radiance[3] = {0, 0, 0};
-						/* simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne */
+						// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
 						for (int s = 0; s < samples; s++) { 
-							/* tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer */
+							// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
 							double r1 = 2 * erand48(PRNG_state);
 							double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
 							double r2 = 2 * erand48(PRNG_state);
@@ -465,14 +474,114 @@ int main(int argc, char **argv)
 							copy(camera_position, ray_origin);
 							axpy(140, ray_direction, ray_origin);
 						
-							/* estime la lumiance qui arrive sur la caméra par ce rayon */
+							// estime la lumiance qui arrive sur la caméra par ce rayon 
 							double sample_radiance[3];
 							radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
-							/* fait la moyenne sur tous les rayons */
+							// fait la moyenne sur tous les rayons 
 							axpy(1. / samples, sample_radiance, subpixel_radiance);
 						}
 						clamp(subpixel_radiance);
-						/* fait la moyenne sur les 4 sous-pixels */
+						// fait la moyenne sur les 4 sous-pixels 
+						axpy(0.25, subpixel_radiance, pixel_radiance);
+					}
+				}
+			copy(pixel_radiance, travail_faire + 3 * (actual-start)); // <-- retournement vertical
+			
+			
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			if(flag){ //Si on reçoit un message
+				process_tag=status.MPI_TAG;
+     			num_process= status.MPI_SOURCE;
+				if(process_tag<size){ // si il s'agit d'un processus qui propose son aide
+					MPI_Get_count(&status, MPI_INTEGER, &count);
+
+     				
+     				temp=(end-actual)/2;
+     				if(temp>1){//Si on a du travail à lui donner
+     					travail_envoye=malloc((temp*3+1)*sizeof(double));
+     					copy_tab(travail_faire+((actual-start)+temp+(end-actual)%2)*3, travail_faire+1, temp*3);
+     					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
+     					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
+     					end=start+((actual-start)+temp+(end-actual)%2);
+     					reper_process[process_tag]=end;
+     					free(travail_envoye);
+     				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
+
+     					}
+     			}else if(process_tag==size+1){
+					MPI_Get_count(&status, MPI_DOUBLE, &count);
+
+     				MPI_Recv(travail_faire+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
+     			}
+     			
+			}
+			actual++;
+
+		}
+
+		if(travail_faire!=img){
+
+		}
+
+		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
+		
+		while(temp_bool){
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			if(flag){
+				process_tag=status.MPI_TAG;
+				if(process_tag<size){
+					if(process_tag==rang){
+						continu=false;
+					}
+				}
+			}
+		}
+		
+
+	}
+
+
+
+
+
+
+
+		/*while(actual<end){
+
+			int i=actual/w;
+			int j=actual%w;
+			unsigned short PRNG_state[3] = {0, 0, i*i*i};
+			double pixel_radiance[3] = {0, 0, 0};
+				for (int sub_i = 0; sub_i < 2; sub_i++) {
+					for (int sub_j = 0; sub_j < 2; sub_j++) {
+						double subpixel_radiance[3] = {0, 0, 0};
+						// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
+						for (int s = 0; s < samples; s++) { 
+							// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
+							double r1 = 2 * erand48(PRNG_state);
+							double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
+							double r2 = 2 * erand48(PRNG_state);
+							double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+							double ray_direction[3];
+							copy(camera_direction, ray_direction);
+							axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
+							axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
+							normalize(ray_direction);
+
+							double ray_origin[3];
+							copy(camera_position, ray_origin);
+							axpy(140, ray_direction, ray_origin);
+						
+							// estime la lumiance qui arrive sur la caméra par ce rayon 
+							double sample_radiance[3];
+							radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
+							// fait la moyenne sur tous les rayons 
+							axpy(1. / samples, sample_radiance, subpixel_radiance);
+						}
+						clamp(subpixel_radiance);
+						// fait la moyenne sur les 4 sous-pixels 
 						axpy(0.25, subpixel_radiance, pixel_radiance);
 					}
 				}
@@ -490,12 +599,12 @@ int main(int argc, char **argv)
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
      					
-     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_aide, size/*tag*/, MPI_COMM_WORLD); 
+     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_aide, size, MPI_COMM_WORLD); 
      					end=img+((actual-start)+temp+(end-actual)%2)*3;
      					reper_process[process_aide]=end;
 
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
-     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_aide/*tag*/, MPI_COMM_WORLD); 
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_aide, MPI_COMM_WORLD); 
 
      					}
      			}else if(process_aide==size+1){
@@ -507,57 +616,18 @@ int main(int argc, char **argv)
      			
 			}
 			actual++;
+
 		}
 
+		*/
 
 
-
-	}
+	
 
 
 	free(reper_process);
 	
-	/* boucle principale */
-	for (int i = 0; i < h; i++) {
- 		unsigned short PRNG_state[3] = {0, 0, i*i*i};
-		for (unsigned short j = 0; j < w; j++) {
-			/* calcule la luminance d'un pixel, avec sur-échantillonnage 2x2 */
-			double pixel_radiance[3] = {0, 0, 0};
-			for (int sub_i = 0; sub_i < 2; sub_i++) {
-				for (int sub_j = 0; sub_j < 2; sub_j++) {
-					double subpixel_radiance[3] = {0, 0, 0};
-					/* simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne */
-					for (int s = 0; s < samples; s++) { 
-						/* tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer */
-						double r1 = 2 * erand48(PRNG_state);
-						double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
-						double r2 = 2 * erand48(PRNG_state);
-						double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-						double ray_direction[3];
-						copy(camera_direction, ray_direction);
-						axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
-						axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
-						normalize(ray_direction);
-
-						double ray_origin[3];
-						copy(camera_position, ray_origin);
-						axpy(140, ray_direction, ray_origin);
-						
-						/* estime la lumiance qui arrive sur la caméra par ce rayon */
-						double sample_radiance[3];
-						radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
-						/* fait la moyenne sur tous les rayons */
-						axpy(1. / samples, sample_radiance, subpixel_radiance);
-					}
-					clamp(subpixel_radiance);
-					/* fait la moyenne sur les 4 sous-pixels */
-					axpy(0.25, subpixel_radiance, pixel_radiance);
-				}
-			}
-			copy(pixel_radiance, image + 3 * ((h - 1 - i) * w + j)); // <-- retournement vertical
-		}
-
-	}
+	
 	fprintf(stderr, "\n");
 
 	/* stocke l'image dans un fichier au format NetPbm */
