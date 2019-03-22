@@ -407,6 +407,7 @@ int main(int argc, char **argv)
   	double *travail_faire=img;//contient le travail que le processus doit faire à un instant t. Au début, cela correspond à la portion de l'image qui lui a été donnée.
   	double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
   	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
+  	int nbr_dette_process=0; //Nombre de processus qui doivent nous rendre du travail qu'on leur a donné.
   	if(rang==0){
   		 image= malloc(3 * w * h * sizeof(*image));
 		if (image == NULL) {
@@ -444,9 +445,11 @@ int main(int argc, char **argv)
 	int num_process;
 	int process_tag; //tag ayant pour valeure le rang d'un process; généralement rang du process qui souhaite voler du travail
 	int temp=0;
+	int indice_retour=0;
+
 
 	int process_aidee=(rang+1)%size;
-	while(continu){
+	while(continu || nbr_dette_process!=0){
 
 		while(actual<end){
 
@@ -499,21 +502,21 @@ int main(int argc, char **argv)
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
      					travail_envoye=malloc((temp*3+1)*sizeof(double));
-     					copy_tab(travail_faire+((actual-start)+temp+(end-actual)%2)*3, travail_faire+1, temp*3);
+     					copy_tab(travail_faire+((actual-start)+temp+(end-actual)%2)*3, travail_envoye+1, temp*3);
      					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
      					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
      					end=start+((actual-start)+temp+(end-actual)%2);
      					reper_process[process_tag]=end;
+     					nbr_dette_process++;
      					free(travail_envoye);
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
      					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
 
      					}
-     			}else if(process_tag==size+1){
+     			}else if(process_tag==size+1){//Si il s'agit d'un processus qui rend le travail qu'on lui a donné.
 					MPI_Get_count(&status, MPI_DOUBLE, &count);
-
-     				MPI_Recv(travail_faire+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-
+					MPI_Recv(travail_faire+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					nbr_dette_process--;
      			}
      			
 			}
@@ -529,7 +532,7 @@ int main(int argc, char **argv)
 		
 		while(temp_bool){
 			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-			if(flag){
+			if(flag){//flag=1 : on a reçu un message
 				process_tag=status.MPI_TAG;
 				if(process_tag<size){
 					if(process_tag==rang){
@@ -548,7 +551,9 @@ int main(int argc, char **argv)
 
 
 
-		/*while(actual<end){
+
+
+		while(actual<end){
 
 			int i=actual/w;
 			int j=actual%w;
@@ -590,28 +595,28 @@ int main(int argc, char **argv)
 			
 			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
 			if(flag){ //Si on reçoit un message
-				process_aide=status.MPI_TAG;
+				process_tag=status.MPI_TAG;
      			num_process= status.MPI_SOURCE;
-				if(process_aide<size){ // si il s'agit d'un processus qui propose son aide
+     			MPI_Get_count(&status, MPI_DOUBLE, &count);
+				if(process_tag<size){ // si il s'agit d'un processus qui propose son aide
 					MPI_Get_count(&status, MPI_INTEGER, &count);
 
      				
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
      					
-     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_aide, size, MPI_COMM_WORLD); 
-     					end=img+((actual-start)+temp+(end-actual)%2)*3;
-     					reper_process[process_aide]=end;
-
+     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
+     					end=start+((actual-start)+temp+(end-actual)%2)*3;
+     					reper_process[process_tag]=end;
+     					nbr_dette_process++;
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
-     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_aide, MPI_COMM_WORLD); 
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
 
      					}
-     			}else if(process_aide==size+1){
-					MPI_Get_count(&status, MPI_DOUBLE, &count);
+     			}else if(process_tag==size+1){
 
-     				MPI_Recv(reper_process[num_process], count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-
+     				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     				nbr_dette_process--;
      			}
      			
 			}
@@ -619,7 +624,33 @@ int main(int argc, char **argv)
 
 		}
 
-		*/
+
+		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
+		MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			if(flag){//flag=1 : on a reçu un message
+				process_tag=status.MPI_TAG;
+				num_process=status.MPI_SOURCE;
+				MPI_Get_count(&status, MPI_DOUBLE, &count);
+				if(process_tag<size){
+					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le porcess courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
+						continu=false;
+					}else{
+						MPI_Recv(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD,&status);
+						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
+					}
+
+				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
+					process_aidee=num_process;
+					
+
+				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
+					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					nbr_dette_process--;				
+				}
+			}
+
+
+		
 
 
 	
