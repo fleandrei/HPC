@@ -123,9 +123,16 @@ static inline void clamp(double *x)
 
 
 static inline void copy_tab(const double *x, double *y, int count){
+	printf("copy_tab\n");
+	printf("x[0]%f\n",x[0]);
 	for (int i = 0; i < count; ++i)
 	{
-		copy(x+3*i, y+3*i);
+		for(int j=0;j<3;j++){
+			printf("x[i+j]=%f",x[i+j]);
+			y[i+j]=x[i+j];
+		}
+		//copy(x+3*i, y+3*i);
+		
 	}
 }
 /******************************* calcul des intersections rayon / sphere *************************************/
@@ -502,9 +509,11 @@ int main(int argc, char **argv)
      				
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
-     					printf("process %d, temp=%d\n",rang, temp);
+     					
      					travail_envoye=malloc((temp*3+1)*sizeof(double));
-     					copy_tab(travail_faire+((actual-start)+temp+(end-actual)%2)*3, travail_envoye+1, temp*3);
+
+     					copy_tab(img+((actual-start)+temp+(end-actual)%2)*3, travail_envoye+1, temp*3);
+     					printf("process %d, temp=%d\n",rang, temp);
      					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
      					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
      					end=start+((actual-start)+temp+(end-actual)%2);
