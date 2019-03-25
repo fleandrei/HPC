@@ -438,7 +438,7 @@ int main(int argc, char **argv)
 	//int nmb_colone_img=
 	int nmb_ligne_img=hfin-hini;
 	bool continu=true;
-	bool temp_bool=true;
+	bool temp_bool=false;
 
 	int count;
 	int flag=0;
@@ -449,10 +449,10 @@ int main(int argc, char **argv)
 
 
 	int process_aidee=(rang+1)%size;
-	while(continu || nbr_dette_process!=0){
 
-		while(actual<end){
-
+	while(actual<end){
+			printf("1ère boucle while, actual=%d\n",actual );
+			printf("end=%d\n",end);
 			int i=actual/w;
 			int j=actual%w;
 			unsigned short PRNG_state[3] = {0, 0, i*i*i};
@@ -472,6 +472,189 @@ int main(int argc, char **argv)
 							axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
 							axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
 							normalize(ray_direction);
+
+							double ray_origin[3];
+							copy(camera_position, ray_origin);
+							axpy(140, ray_direction, ray_origin);
+						
+							// estime la lumiance qui arrive sur la caméra par ce rayon 
+							double sample_radiance[3];
+							radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
+							// fait la moyenne sur tous les rayons 
+							axpy(1. / samples, sample_radiance, subpixel_radiance);
+						}
+						clamp(subpixel_radiance);
+						// fait la moyenne sur les 4 sous-pixels 
+						axpy(0.25, subpixel_radiance, pixel_radiance);
+					}
+				}
+			copy(pixel_radiance, img + 3 * (actual-start)); // <-- retournement vertical
+			
+			
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			if(flag){ //Si on reçoit un message
+				process_tag=status.MPI_TAG;
+     			num_process= status.MPI_SOURCE;
+     			MPI_Get_count(&status, MPI_DOUBLE, &count);
+				if(process_tag<size){ // si il s'agit d'un processus qui propose son aide
+					
+
+     				
+     				temp=(end-actual)/2;
+     				if(temp>1){//Si on a du travail à lui donner
+     					printf("process %d, temp=%d\n",rang, temp);
+     					travail_envoye=malloc((temp*3+1)*sizeof(double));
+     					copy_tab(travail_faire+((actual-start)+temp+(end-actual)%2)*3, travail_envoye+1, temp*3);
+     					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
+     					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
+     					end=start+((actual-start)+temp+(end-actual)%2);
+     					reper_process[process_tag]=end;
+     					nbr_dette_process++;
+     					free(travail_envoye);
+     					/*MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
+     					
+     					end=start+((actual-start)+temp+(end-actual)%2);
+     					reper_process[process_tag]=end;
+     					nbr_dette_process++;*/
+     					printf("process %d, nbr_dette_process=%d\n", rang, nbr_dette_process );
+     				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
+
+     					}
+     			}else if(process_tag==size+1){
+
+     				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     				nbr_dette_process--;
+     			}
+     			
+			}
+			actual++;
+
+		}
+
+	while(continu || nbr_dette_process!=0){
+
+		//printf("Grande boucle while\n ");
+		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
+		//printf("après la demande de travail\n");
+		MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			if(flag){//flag=1 : on a reçu un message
+				process_tag=status.MPI_TAG;
+				num_process=status.MPI_SOURCE;
+				MPI_Get_count(&status, MPI_DOUBLE, &count);
+				if(process_tag<size){
+					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le porcess courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
+						continu=false;
+					}else{
+						MPI_Recv(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD,&status);
+						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
+					}
+					
+				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
+					process_aidee=num_process;
+					temp_bool=true;
+					travail_envoye=malloc(count*sizeof(double));
+					travail_faire=malloc((count-1)*sizeof(double));
+					MPI_Recv(travail_envoye, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					indice_retour=travail_envoye[0];
+					copy_tab(travail_envoye+1,travail_faire,  temp*3);
+					printf("process_tag=%d,  num_process=%d, count=%d",process_tag, num_process, count);
+					free(travail_envoye);
+				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
+					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					nbr_dette_process--;				
+				}
+			}
+
+
+			if(temp_bool){// Si On a volé du travail
+				start=indice_retour;
+				actual=start;
+				end=start+(count-1)/3;
+
+				while(actual<end){
+					int i=actual/w;
+					int j=actual%w;
+					unsigned short PRNG_state[3] = {0, 0, i*i*i};
+					double pixel_radiance[3] = {0, 0, 0};
+					for (int sub_i = 0; sub_i < 2; sub_i++) {
+						for (int sub_j = 0; sub_j < 2; sub_j++) {
+							double subpixel_radiance[3] = {0, 0, 0};
+							// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
+							for (int s = 0; s < samples; s++) { 
+								// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
+								double r1 = 2 * erand48(PRNG_state);
+								double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
+								double r2 = 2 * erand48(PRNG_state);
+								double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+								double ray_direction[3];
+								copy(camera_direction, ray_direction);
+								axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
+								axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
+								normalize(ray_direction);
+
+								double ray_origin[3];
+								copy(camera_position, ray_origin);
+								axpy(140, ray_direction, ray_origin);
+						
+								// estime la lumiance qui arrive sur la caméra par ce rayon 
+								double sample_radiance[3];
+								radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
+								// fait la moyenne sur tous les rayons 
+								axpy(1. / samples, sample_radiance, subpixel_radiance);
+							}
+							clamp(subpixel_radiance);
+							// fait la moyenne sur les 4 sous-pixels 
+							axpy(0.25, subpixel_radiance, pixel_radiance);
+						}
+					}
+					copy(pixel_radiance, travail_faire + 3 * (actual-start)); // <-- retournement vertical
+			
+			
+					MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+					if(flag){ //Si on reçoit un message
+						process_tag=status.MPI_TAG;
+     					num_process= status.MPI_SOURCE;
+     					MPI_Get_count(&status, MPI_DOUBLE, &count);
+						if(process_tag<size){ // si il s'agit d'un processus qui propose son aide, on fait suivre sa requète au prochain process modulo size
+     						MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
+		
+     					}else if(process_tag==size+1){
+
+     						MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     						nbr_dette_process--;
+     					}
+     			
+					}
+					actual++;
+
+				}
+
+				MPI_Send(travail_faire, count-1, MPI_DOUBLE, process_aidee, size+1, MPI_COMM_WORLD);
+				free(travail_faire);
+				temp_bool=false;
+			}
+		/*while(actual<end){
+
+			int i=actual/w;
+			int j=actual%w;
+			unsigned short PRNG_state[3] = {0, 0, i*i*i};
+			double pixel_radiance[3] = {0, 0, 0};
+				for (int sub_i = 0; sub_i < 2; sub_i++) {
+					for (int sub_j = 0; sub_j < 2; sub_j++) {
+						double subpixel_radiance[3] = {0, 0, 0};
+						// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
+						for (int s = 0; s < samples; s++) { 
+							// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
+							double r1 = 2 * erand48(PRNG_state);
+							double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
+							double r2 = 2 * erand48(PRNG_state);
+							double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+							double ray_direction[3];
+							copy(camera_direction, ray_direction);
+							axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
+							axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
+							normalize(ray_direction);mg;
 
 							double ray_origin[3];
 							copy(camera_position, ray_origin);
@@ -540,121 +723,12 @@ int main(int argc, char **argv)
 					}
 				}
 			}
-		}
+		}*/
 		
 
 	}
-
-
-
-
-
-
-
-
-
-		while(actual<end){
-
-			int i=actual/w;
-			int j=actual%w;
-			unsigned short PRNG_state[3] = {0, 0, i*i*i};
-			double pixel_radiance[3] = {0, 0, 0};
-				for (int sub_i = 0; sub_i < 2; sub_i++) {
-					for (int sub_j = 0; sub_j < 2; sub_j++) {
-						double subpixel_radiance[3] = {0, 0, 0};
-						// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
-						for (int s = 0; s < samples; s++) { 
-							// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
-							double r1 = 2 * erand48(PRNG_state);
-							double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
-							double r2 = 2 * erand48(PRNG_state);
-							double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-							double ray_direction[3];
-							copy(camera_direction, ray_direction);
-							axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
-							axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
-							normalize(ray_direction);
-
-							double ray_origin[3];
-							copy(camera_position, ray_origin);
-							axpy(140, ray_direction, ray_origin);
-						
-							// estime la lumiance qui arrive sur la caméra par ce rayon 
-							double sample_radiance[3];
-							radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
-							// fait la moyenne sur tous les rayons 
-							axpy(1. / samples, sample_radiance, subpixel_radiance);
-						}
-						clamp(subpixel_radiance);
-						// fait la moyenne sur les 4 sous-pixels 
-						axpy(0.25, subpixel_radiance, pixel_radiance);
-					}
-				}
-			copy(pixel_radiance, img + 3 * (actual-start)); // <-- retournement vertical
-			
-			
-			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-			if(flag){ //Si on reçoit un message
-				process_tag=status.MPI_TAG;
-     			num_process= status.MPI_SOURCE;
-     			MPI_Get_count(&status, MPI_DOUBLE, &count);
-				if(process_tag<size){ // si il s'agit d'un processus qui propose son aide
-					MPI_Get_count(&status, MPI_INTEGER, &count);
-
-     				
-     				temp=(end-actual)/2;
-     				if(temp>1){//Si on a du travail à lui donner
-     					
-     					MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
-     					end=start+((actual-start)+temp+(end-actual)%2)*3;
-     					reper_process[process_tag]=end;
-     					nbr_dette_process++;
-     				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
-     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
-
-     					}
-     			}else if(process_tag==size+1){
-
-     				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-     				nbr_dette_process--;
-     			}
-     			
-			}
-			actual++;
-
-		}
-
-
-		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
-		MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-			if(flag){//flag=1 : on a reçu un message
-				process_tag=status.MPI_TAG;
-				num_process=status.MPI_SOURCE;
-				MPI_Get_count(&status, MPI_DOUBLE, &count);
-				if(process_tag<size){
-					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le porcess courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
-						continu=false;
-					}else{
-						MPI_Recv(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD,&status);
-						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
-					}
-
-				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
-					process_aidee=num_process;
-					
-
-				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
-					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-					nbr_dette_process--;				
-				}
-			}
-
-
-		
-
-
 	
-
+	MPI_Gather(img, 3*w*h/size, MPI_DOUBLE, image, 3*w*h/size, MPI_DOUBLE, 0, MPI_COMM_WORLD );
 
 	free(reper_process);
 	
@@ -680,4 +754,7 @@ int main(int argc, char **argv)
 	}
 
 	free(image);
+	free(img);
+	MPI_Finalize();
+	return 0;
 }

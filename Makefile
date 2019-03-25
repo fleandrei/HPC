@@ -19,7 +19,7 @@ pathtracer_MPI: pathtracer_MPI.c
 	mpicc -o $@ $^ $(LDFLAGS)
 
 exec: pathtracer_MPI
-	mpirun -n 2 -hostfile $(HOST) $(MAP) ./$^
+	mpirun -n 2 -hostfile $(HOST) $(MAP) ./$^ 20
 	 
 clean :
 	rm -f $(BIN) *.o *~
