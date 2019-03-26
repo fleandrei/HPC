@@ -412,7 +412,8 @@ int main(int argc, char **argv)
   	double *img;
   	double *travail_vole;
   	double *travail_faire=img;//contient le travail que le processus doit faire à un instant t. Au début, cela correspond à la portion de l'image qui lui a été donnée.
-  	double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
+  	int *travail_info=malloc(2*sizeof(int));
+  	//double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
   	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
   	int nbr_dette_process=0; //Nombre de processus qui doivent nous rendre du travail qu'on leur a donné.
   	if(rang==0){
@@ -458,8 +459,7 @@ int main(int argc, char **argv)
 	int process_aidee=(rang+1)%size;
 
 	while(actual<end){
-			printf("1ère boucle while, actual=%d\n",actual );
-			printf("end=%d\n",end);
+			printf("1ère boucle while, process=%d, actual=%d, end=%d \n",rang, actual, end );
 			int i=actual/w;
 			int j=actual%w;
 			unsigned short PRNG_state[3] = {0, 0, i*i*i};
@@ -503,37 +503,43 @@ int main(int argc, char **argv)
 				process_tag=status.MPI_TAG;
      			num_process= status.MPI_SOURCE;
      			MPI_Get_count(&status, MPI_DOUBLE, &count);
-				if(process_tag<size){ // si il s'agit d'un processus qui propose son aide
+				if(process_tag<size && reper_process[process_tag]==-1){ // si il s'agit d'un processus qui propose son aide
 					
 
      				
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
      					
-     					travail_envoye=malloc((temp*3+1)*sizeof(double));
-
+     					travail_info[0]=start+((actual-start)+temp+(end-actual)%2);
+     					travail_info[1]=temp;
+     					/*travail_envoye=malloc((temp*3+1)*sizeof(double));
      					copy_tab(img+((actual-start)+temp+(end-actual)%2)*3, travail_envoye+1, temp*3);
-     					printf("process %d, temp=%d\n",rang, temp);
+     					
      					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
      					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
-     					end=start+((actual-start)+temp+(end-actual)%2);
+     					*/
+     					
+     					MPI_Send(travail_info, 2, MPI_INTEGER, process_tag, size, MPI_COMM_WORLD); 
+     					end=actual+temp;
      					reper_process[process_tag]=end;
      					nbr_dette_process++;
-     					free(travail_envoye);
+     					
      					/*MPI_Send(img+((actual-start)+temp+(end-actual)%2)*3, temp*3, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
      					
      					end=start+((actual-start)+temp+(end-actual)%2);
      					reper_process[process_tag]=end;
      					nbr_dette_process++;*/
-     					printf("process %d, nbr_dette_process=%d\n", rang, nbr_dette_process );
+     					printf("process %d, temp=%d, nbr_dette_process=%d\n", rang,temp, nbr_dette_process );
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
      					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
 
      					}
-     			}else if(process_tag==size+1){
+     			}else if(process_tag==size+1 && reper_process[num_process] != -1){
 
      				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
      				nbr_dette_process--;
+     				reper_process[num_process]=0;
+
      			}
      			
 			}
@@ -541,18 +547,21 @@ int main(int argc, char **argv)
 
 		}
 
+		printf("process %d: JE SORS DE LA PREMIèRE Boucle avec actual=%d et end=%d\n",rang,actual,end );
 	while(continu || nbr_dette_process!=0){
 
 		//printf("Grande boucle while\n ");
 		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
 		//printf("après la demande de travail\n");
 		MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+			//printf("FLAG FLAG FLAG FLAG=%d\n",flag );
 			if(flag){//flag=1 : on a reçu un message
 				process_tag=status.MPI_TAG;
 				num_process=status.MPI_SOURCE;
 				MPI_Get_count(&status, MPI_DOUBLE, &count);
+				//printf("process: %d  process_tag=%d, count=%d",rang,process_tag, count);
 				if(process_tag<size){
-					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le porcess courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
+					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le process courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
 						continu=false;
 					}else{
 						MPI_Recv(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD,&status);
@@ -562,13 +571,17 @@ int main(int argc, char **argv)
 				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
 					process_aidee=num_process;
 					temp_bool=true;
-					travail_envoye=malloc(count*sizeof(double));
+
+					/*travail_envoye=malloc(count*sizeof(double));
 					travail_faire=malloc((count-1)*sizeof(double));
 					MPI_Recv(travail_envoye, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					indice_retour=travail_envoye[0];
 					copy_tab(travail_envoye+1,travail_faire,  temp*3);
 					printf("process_tag=%d,  num_process=%d, count=%d",process_tag, num_process, count);
-					free(travail_envoye);
+					free(travail_envoye);*/
+
+					MPI_Recv(travail_info, count, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					printf("process_tag=%d,  num_process=%d, count=%d\n",process_tag, num_process, count);
 				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
 					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					nbr_dette_process--;				
@@ -577,9 +590,9 @@ int main(int argc, char **argv)
 
 
 			if(temp_bool){// Si On a volé du travail
-				start=indice_retour;
+				start=travail_info[0];      //indice_retour;
 				actual=start;
-				end=start+(count-1)/3;
+				end=start+travail_info[1];
 
 				while(actual<end){
 					int i=actual/w;
