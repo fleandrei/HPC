@@ -446,8 +446,8 @@ int main(int argc, char **argv)
 	//int nmb_colone_img=
 	int nmb_ligne_img=hfin-hini;
 	bool continu=true;
-	bool temp_bool=false;
-
+	bool travail_vole_bool=false;
+	bool demande_travail_bool=false;
 	int count;
 	int flag=0;
 	int num_process;
@@ -455,11 +455,11 @@ int main(int argc, char **argv)
 	int temp=0;
 	int indice_retour=0;
 
-
+	int test=1;
 	int process_aidee=(rang+1)%size;
 
 	while(actual<end){
-			printf("1ère boucle while, process=%d, actual=%d, end=%d \n",rang, actual, end );
+			//printf("1ère boucle while, process=%d, actual=%d, end=%d \n",rang, actual, end );
 			int i=actual/w;
 			int j=actual%w;
 			unsigned short PRNG_state[3] = {0, 0, i*i*i};
@@ -503,9 +503,10 @@ int main(int argc, char **argv)
 				process_tag=status.MPI_TAG;
      			num_process= status.MPI_SOURCE;
      			MPI_Get_count(&status, MPI_DOUBLE, &count);
+     			printf("FLAG 1ere boucle=%d",flag);
 				if(process_tag<size && reper_process[process_tag]==-1){ // si il s'agit d'un processus qui propose son aide
 					
-
+					printf("Rang=%d   process_tag=%d,   reper_process[i]=%d\n",rang,process_tag, reper_process[process_tag] );
      				
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
@@ -551,8 +552,13 @@ int main(int argc, char **argv)
 	while(continu || nbr_dette_process!=0){
 
 		//printf("Grande boucle while\n ");
-		MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
-		//printf("après la demande de travail\n");
+		if(!demande_travail_bool){
+			test=MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, rang, MPI_COMM_WORLD); 
+			demande_travail_bool=true;
+			printf("rang %d  après demande de travail test=%d\n",rang,test);
+		}
+		
+		
 		MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
 			//printf("FLAG FLAG FLAG FLAG=%d\n",flag );
 			if(flag){//flag=1 : on a reçu un message
@@ -570,7 +576,7 @@ int main(int argc, char **argv)
 					
 				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
 					process_aidee=num_process;
-					temp_bool=true;
+					travail_vole_bool=true;
 
 					/*travail_envoye=malloc(count*sizeof(double));
 					travail_faire=malloc((count-1)*sizeof(double));
@@ -586,10 +592,11 @@ int main(int argc, char **argv)
 					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					nbr_dette_process--;				
 				}
+				flag=0;
 			}
 
 
-			if(temp_bool){// Si On a volé du travail
+			if(travail_vole_bool){// Si On a volé du travail
 				start=travail_info[0];      //indice_retour;
 				actual=start;
 				end=start+travail_info[1];
@@ -654,7 +661,8 @@ int main(int argc, char **argv)
 
 				MPI_Send(travail_faire, count-1, MPI_DOUBLE, process_aidee, size+1, MPI_COMM_WORLD);
 				free(travail_faire);
-				temp_bool=false;
+				travail_vole_bool=false;
+				demande_travail_bool=false;
 			}
 		/*while(actual<end){
 
