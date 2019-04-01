@@ -536,6 +536,7 @@ int main(int argc, char **argv)
      					nbr_dette_process++;*/
      					printf("process %d, temp=%d, nbr_dette_process=%d\n", rang,temp, nbr_dette_process );
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
+     					MPI_Recv(&temp, 1,MPI_INTEGER, num_process, process_tag,MPI_COMM_WORLD, &status);
      					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
 
      					}
@@ -574,7 +575,8 @@ int main(int argc, char **argv)
 					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le process courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
 						continu=false;
 					}else{
-						MPI_Recv(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD,&status);
+						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
+						printf("rang %d,  process_aidee=%d, process_tag=%d\n", rang, process_aidee, process_tag)	;
 						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
 					}
 					
@@ -593,7 +595,9 @@ int main(int argc, char **argv)
 					MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					printf("process_tag=%d,  num_process=%d, count=%d\n",process_tag, num_process, count);
 				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
+					printf("rang %d:  count=%d \n",rang,count);
 					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+
 					nbr_dette_process--;				
 				}
 				flag=0;
@@ -604,6 +608,7 @@ int main(int argc, char **argv)
 				start=travail_info[0];      //indice_retour;
 				actual=start;
 				end=start+travail_info[1];
+				travail_faire=malloc(3*travail_info[1]*sizeof(double));
 				
 				while(actual<end){
 					int i=actual/w;
@@ -641,7 +646,7 @@ int main(int argc, char **argv)
 							axpy(0.25, subpixel_radiance, pixel_radiance);
 						}
 					}
-					printf("avant copy \n\n");
+					//printf("rang%d  avant copy \n\n",rang);
 					copy(pixel_radiance, travail_faire + 3 * (actual-start)); // <-- retournement vertical
 					
 
@@ -664,12 +669,14 @@ int main(int argc, char **argv)
 					actual++;
 
 				}
-
-				MPI_Send(travail_faire, count-1, MPI_DOUBLE, process_aidee, size+1, MPI_COMM_WORLD);
+				printf("rang %d avant dernier send:  count=%d, process_aidee=%d \n", rang, count, process_aidee);
+				MPI_Send(travail_faire, travail_info[1]*3, MPI_DOUBLE, process_aidee, size+1, MPI_COMM_WORLD);
+				printf("après send\n");
 				free(travail_faire);
 				travail_vole_bool=false;
 				demande_travail_bool=false;
 			}
+
 		/*while(actual<end){
 
 			int i=actual/w;
@@ -763,7 +770,7 @@ int main(int argc, char **argv)
 		
 
 	}
-	
+	printf("Rang=%d: Avant Le MPI_Gather!!!\n w*h/size=%d \n", rang, w*h/size);
 	MPI_Gather(img, 3*w*h/size, MPI_DOUBLE, image, 3*w*h/size, MPI_DOUBLE, 0, MPI_COMM_WORLD );
 
 	free(reper_process);
