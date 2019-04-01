@@ -416,6 +416,9 @@ int main(int argc, char **argv)
   	//double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
   	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
   	int nbr_dette_process=0; //Nombre de processus qui doivent nous rendre du travail qu'on leur a donné.
+  	for(int i=0; i<size; i++)
+  		reper_process[i]=-1;
+
   	if(rang==0){
   		 image= malloc(3 * w * h * sizeof(*image));
 		if (image == NULL) {
@@ -503,10 +506,11 @@ int main(int argc, char **argv)
 				process_tag=status.MPI_TAG;
      			num_process= status.MPI_SOURCE;
      			MPI_Get_count(&status, MPI_DOUBLE, &count);
-     			printf("FLAG 1ere boucle=%d",flag);
+     			//printf("FLAG 1ere boucle=%d",flag);
+     			//printf("    ___Rang %d;  process_tag=%d,  reper_process[process_tag]=%d",rang, process_tag, reper_process[process_tag]);
 				if(process_tag<size && reper_process[process_tag]==-1){ // si il s'agit d'un processus qui propose son aide
 					
-					printf("Rang=%d   process_tag=%d,   reper_process[i]=%d\n",rang,process_tag, reper_process[process_tag] );
+					//printf("   ___Rang=%d   process_tag=%d,   reper_process[i]=%d\n",rang,process_tag, reper_process[process_tag] );
      				
      				temp=(end-actual)/2;
      				if(temp>1){//Si on a du travail à lui donner
@@ -585,8 +589,8 @@ int main(int argc, char **argv)
 					copy_tab(travail_envoye+1,travail_faire,  temp*3);
 					printf("process_tag=%d,  num_process=%d, count=%d",process_tag, num_process, count);
 					free(travail_envoye);*/
-
-					MPI_Recv(travail_info, count, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					
+					MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					printf("process_tag=%d,  num_process=%d, count=%d\n",process_tag, num_process, count);
 				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
 					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
@@ -600,7 +604,7 @@ int main(int argc, char **argv)
 				start=travail_info[0];      //indice_retour;
 				actual=start;
 				end=start+travail_info[1];
-
+				
 				while(actual<end){
 					int i=actual/w;
 					int j=actual%w;
@@ -637,8 +641,10 @@ int main(int argc, char **argv)
 							axpy(0.25, subpixel_radiance, pixel_radiance);
 						}
 					}
+					printf("avant copy \n\n");
 					copy(pixel_radiance, travail_faire + 3 * (actual-start)); // <-- retournement vertical
-			
+					
+
 			
 					MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
 					if(flag){ //Si on reçoit un message
