@@ -523,7 +523,7 @@ int main(int argc, char **argv)
      					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
      					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
      					*/
-     					
+     					MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD, &status);
      					MPI_Send(travail_info, 2, MPI_INTEGER, process_tag, size, MPI_COMM_WORLD); 
      					end=actual+temp;
      					reper_process[process_tag]=end;
@@ -534,17 +534,18 @@ int main(int argc, char **argv)
      					end=start+((actual-start)+temp+(end-actual)%2);
      					reper_process[process_tag]=end;
      					nbr_dette_process++;*/
-     					printf("process %d, temp=%d, nbr_dette_process=%d\n", rang,temp, nbr_dette_process );
+     					printf("\n\n\nprocess %d reçoit demande de travail et répond Positivement:\n temp=%d, nbr_dette_process=%d\n", rang,temp, nbr_dette_process );
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
      					MPI_Recv(&temp, 1,MPI_INTEGER, num_process, process_tag,MPI_COMM_WORLD, &status);
      					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
-
+     					printf("\n\nBoucle 1: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n\n",rang, num_process, process_aidee );
      					}
      			}else if(process_tag==size+1 && reper_process[num_process] != -1){
 
      				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
      				nbr_dette_process--;
      				reper_process[num_process]=0;
+     				printf("\n\n Boucle 1: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
 
      			}
      			
@@ -553,7 +554,7 @@ int main(int argc, char **argv)
 
 		}
 
-		printf("process %d: JE SORS DE LA PREMIèRE Boucle avec actual=%d et end=%d\n",rang,actual,end );
+		printf("\nprocess %d: JE SORS DE LA PREMIèRE Boucle avec actual=%d et end=%d\n",rang,actual,end );
 	while(continu || nbr_dette_process!=0){
 
 		//printf("Grande boucle while\n ");
@@ -574,10 +575,13 @@ int main(int argc, char **argv)
 				if(process_tag<size){
 					if(process_tag==rang){  //Si il s'agit d'une proposition d'aide que le process courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
 						continu=false;
+						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
 					}else{
 						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
-						printf("rang %d,  process_aidee=%d, process_tag=%d\n", rang, process_aidee, process_tag)	;
+						printf("\n\nBoucle 2: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n\n",rang, num_process, process_aidee );
+						printf("  process_aidee=%d, process_tag=%d\n", process_aidee, process_tag);
 						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
+
 					}
 					
 				}else if(process_tag==size){ //Si il s'agit de travail que l'on nous a donné à faire
@@ -593,9 +597,10 @@ int main(int argc, char **argv)
 					free(travail_envoye);*/
 					
 					MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					printf("\n\n process %d reçoit du travail de la part de %d\n",rang, num_process);
 					printf("process_tag=%d,  num_process=%d, count=%d\n",process_tag, num_process, count);
 				}else{ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
-					printf("rang %d:  count=%d \n",rang,count);
+					printf("\n\n Boucle 2: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
 					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 
 					nbr_dette_process--;				
@@ -657,10 +662,11 @@ int main(int argc, char **argv)
      					num_process= status.MPI_SOURCE;
      					MPI_Get_count(&status, MPI_DOUBLE, &count);
 						if(process_tag<size){ // si il s'agit d'un processus qui propose son aide, on fait suivre sa requète au prochain process modulo size
+     						MPI_Recv(&temp,1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
      						MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
-		
+							printf("\n\nBoucle 3: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n\n",rang, num_process, process_aidee );
      					}else if(process_tag==size+1){
-
+     						printf("\n\n Boucle 3: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
      						MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
      						nbr_dette_process--;
      					}
@@ -669,7 +675,7 @@ int main(int argc, char **argv)
 					actual++;
 
 				}
-				printf("rang %d avant dernier send:  count=%d, process_aidee=%d \n", rang, count, process_aidee);
+				printf("rang %d avant dernier send:  count=%d, process_aidee=%d, travail_info[1]=%d \n", rang, count, process_aidee,  travail_info[1]);
 				MPI_Send(travail_faire, travail_info[1]*3, MPI_DOUBLE, process_aidee, size+1, MPI_COMM_WORLD);
 				printf("après send\n");
 				free(travail_faire);
