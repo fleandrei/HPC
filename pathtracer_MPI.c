@@ -413,8 +413,16 @@ int main(int argc, char **argv)
   	double *travail_vole;
   	double *travail_faire=img;//contient le travail que le processus doit faire à un instant t. Au début, cela correspond à la portion de l'image qui lui a été donnée.
   	int *travail_info=malloc(2*sizeof(int));
+  	if (travail_info == NULL) {
+			perror("\nImpossible d'allouer travail_info\n");
+			exit(1);
+		}
   	//double *travail_envoye;//buffer qui contient le travail que l'on envoie à d'autres process
   	int *reper_process=malloc(size*sizeof(int)); //répertoire indiquant à quel adresses les process qui nous ont pris du travail doivent retourner le résultat:  indice=process;  valeur=adresse
+  	if (reper_process == NULL) {
+			perror("\nImpossible d'allouer reper_process\n");
+			exit(1);
+		}
   	int nbr_dette_process=0; //Nombre de processus qui doivent nous rendre du travail qu'on leur a donné.
   	for(int i=0; i<size; i++)
   		reper_process[i]=-1;
@@ -423,10 +431,13 @@ int main(int argc, char **argv)
   		// image= malloc(3 * w * h * sizeof(*image));
 		image= malloc(3 * w * h * sizeof(double));
 		if (image == NULL) {
-			perror("Impossible d'allouer l'image\n");
+			perror("\nImpossible d'allouer l'image\n");
 			exit(1);
 		}
+  	}else{
+  		image=malloc(sizeof(double));
   	}
+
   	if(rang==size-1){
   		img=malloc((3*w*h/size +3*w*h%size)*sizeof(double)); //Si le nombre de pixel de l'image n'est pas un multiple du nombre de procesus, le dernier process prend les pixels qui restent
   	}else{
@@ -434,11 +445,23 @@ int main(int argc, char **argv)
   	}
   	
 	if (img == NULL) {
-		perror("Impossible d'allouer de l'espace dans un process\n");
+		perror("\nImpossible d'allouer de l'espace dans un process\n");
 		exit(1);
 	}
   	
-	
+	printf("size(image)=%lu\n",(sizeof(image)/(3*sizeof(double))) );
+	printf("Rang=%d: DEBUT!!!\n w*h/size=%d, size(img)=%lu \n", rang, w*h/size, (sizeof(img)/(3*sizeof(double))));
+
+	/*int cont=0;
+	for (int i = 0; i < h*w*3/size; ++i)
+	{
+		cont=i;
+		if(i%100==0){
+			image[i]=7;
+			printf("image[i]=%f", image[i]);
+		}
+	}
+	printf("cont=%d\n",cont );*/
 
 	int start=w*h/size*rang;
 	int end=(rang==size-1)? start + w*h/size + w*h%size : start+w*h/size;
@@ -462,7 +485,7 @@ int main(int argc, char **argv)
 	int test=1;
 	int process_aidee=(rang+1)%size;
 	int nbr_process_fini=0;
-
+	printf("process %d: start=%d, end=%d \n",rang, start, end );
 	while(actual<end){
 			//printf("1ère boucle while, process=%d, actual=%d, end=%d \n",rang, actual, end );
 			int i=actual/w;
@@ -525,9 +548,10 @@ int main(int argc, char **argv)
      					travail_envoye[0]=start+((actual-start)+temp+(end-actual)%2);//Le premier élément contient l'indice de l'adresse à laquelle retourner le travail
      					MPI_Send(travail_envoye, temp*3+1, MPI_DOUBLE, process_tag, size, MPI_COMM_WORLD); 
      					*/
+     					end=actual+temp+(end-actual)%2;
      					MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD, &status);
      					MPI_Send(travail_info, 2, MPI_INTEGER, process_tag, size, MPI_COMM_WORLD); 
-     					end=actual+temp;
+     					
      					reper_process[process_tag]=end;
      					nbr_dette_process++;
      					
@@ -536,7 +560,7 @@ int main(int argc, char **argv)
      					end=start+((actual-start)+temp+(end-actual)%2);
      					reper_process[process_tag]=end;
      					nbr_dette_process++;*/
-     					printf("\n\n\nprocess %d reçoit demande de travail et répond Positivement:\n temp=%d, nbr_dette_process=%d\n", rang,temp, nbr_dette_process );
+     					printf("\n\n\nprocess %d reçoit demande de travail de la part de %d et répond Positivement:\n temp=%d, nbr_dette_process=%d\n", rang, num_process, temp, nbr_dette_process );
      				}else{// Si on n'a pas de travail à lui donner on fait suivre sa requète au prochain process modulo size
      					MPI_Recv(&temp, 1,MPI_INTEGER, num_process, process_tag,MPI_COMM_WORLD, &status);
      					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
@@ -545,7 +569,7 @@ int main(int argc, char **argv)
      					}
      			}else if(process_tag==size+1 && reper_process[num_process] != -1){
 
-     				MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     				MPI_Recv(img+(reper_process[num_process]-start)*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
      				nbr_dette_process--;
      				reper_process[num_process]=0;
      				printf("\n\n Boucle 1: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
@@ -607,9 +631,10 @@ int main(int argc, char **argv)
 					MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					printf("\n\n process %d reçoit du travail de la part de %d\n",rang, num_process);
 					printf("process_tag=%d,  num_process=%d, count=%d\n",process_tag, num_process, count);
+					printf("travail_info[2]=%d\n",travail_info[1]);
 				}else if(process_tag==size+1){ //Si un processus nous rend le travail qu'il nous a volé  i.e. process_tag=size+1
 					
-					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					MPI_Recv(img+(reper_process[num_process]-start)*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 					printf("\n\n Boucle 2: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
 					nbr_dette_process--;				
 				}else {
@@ -626,6 +651,10 @@ int main(int argc, char **argv)
 				actual=start;
 				end=start+travail_info[1];
 				travail_faire=malloc(3*travail_info[1]*sizeof(double));
+				if (travail_faire == NULL) {
+					perror("Impossible d'allouer travail_faire\n");
+					exit(1);
+				}
 				
 				while(actual<end){
 					int i=actual/w;
@@ -679,8 +708,8 @@ int main(int argc, char **argv)
      						nbr_process_fini++;
 							printf("\n\nBoucle 3: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n nbr_process_fini=%d\n\n",rang, num_process, process_aidee, nbr_process_fini );
      					}else if(process_tag==size+1){
-     						
-     						MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     						printf("\n\n Boucle 3: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
+     						MPI_Recv(img+(reper_process[num_process]-start)*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
      						nbr_dette_process--;
      						printf("\n\n Boucle 3: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
      					}else{
@@ -706,7 +735,103 @@ int main(int argc, char **argv)
 
 
 			
-		/*while(actual<end){
+	
+
+	}
+
+	/*printf("\nProcess %d a finit : Avant Bcast: nbr_process_fini=%d\n",rang, nbr_process_fini);
+	nbr_process_fini++;
+	MPI_Bcast(&nbr_process_fini, 1, MPI_INTEGER, rang, MPI_COMM_WORLD);
+	printf("\nProcess %d a finit :Après Bcast nbr_process_fini=%d\n",rang, nbr_process_fini );
+*/
+		while(nbr_process_fini<size|| nbr_dette_process!=0){
+			//printf("Process %d nbr_process_fini=%d\n",rang, nbr_process_fini );
+			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+				if(flag){ //Si on reçoit un message
+					process_tag=status.MPI_TAG;
+     				num_process= status.MPI_SOURCE;
+     				MPI_Get_count(&status, MPI_DOUBLE, &count);
+					if(process_tag<size){ // si il s'agit d'un processus qui propose son aide, on fait suivre sa requète au prochain process modulo size
+     					MPI_Recv(&temp,1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
+     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
+     					nbr_process_fini++;
+						printf("\n\nBoucle 4: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n nbr_process_fini=%d\n\n",rang, num_process, process_aidee, nbr_process_fini );
+     				}else if(process_tag==size+1){//Si on reçoit un retour de travail
+     					printf("\n\n Boucle 4: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
+     					printf("reper_process[num_process]=%d\n", reper_process[num_process]);
+     					MPI_Recv(img+(reper_process[num_process]-start)*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+     					nbr_dette_process--;
+     					printf("\n\n Boucle 4: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
+     				}else if(process_tag==size+2){
+     					MPI_Recv(&temp,1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
+     					nbr_process_fini++;
+     					printf("Boucle 4: process %d:  reçoit que le process %d a finit;  nbr_process_fini=%d\n",rang, temp, nbr_process_fini );
+     				}
+     			
+				}
+				
+
+			}
+
+
+
+	printf("size(image)=%lu\n",(sizeof(image)/(3*sizeof(double))) );
+	printf("Rang=%d: Avant Le MPI_Gather!!!\n w*h/size=%d, size(img)=%lu \n", rang, w*h/size, (sizeof(img)/(3*sizeof(double))));
+	
+	//MPI_Gather(img, 3*w*h/size, MPI_DOUBLE, image, 3*w*h/size, MPI_DOUBLE, 0, MPI_COMM_WORLD );
+
+
+	if(rang==0){
+		for (int i = 1; i < size; ++i)
+		{
+			printf("i=%d\n",i );
+			MPI_Recv(image+i*h*w*3/size, h*w*3/size, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD,&status);
+		}
+	}else{
+		MPI_Send(img, h*w*3/size, MPI_DOUBLE, 0, 10, MPI_COMM_WORLD);
+		printf("procss %d a envoyé img\n",rang );
+	}
+
+	free(reper_process);
+	
+	
+	fprintf(stderr, "\n");
+
+	/* stocke l'image dans un fichier au format NetPbm */
+	{
+		struct passwd *pass; 
+		char nom_sortie[100] = "";
+		char nom_rep[30] = "";
+
+		pass = getpwuid(getuid()); 
+		sprintf(nom_rep, "/tmp/%s", pass->pw_name);
+		mkdir(nom_rep, S_IRWXU);
+		sprintf(nom_sortie, "%s/image.ppm", nom_rep);
+		
+		FILE *f = fopen(nom_sortie, "w");
+		fprintf(f, "P3\n%d %d\n%d\n", w, h, 255); 
+		for (int i = 0; i < w * h; i++) 
+	  		fprintf(f,"%d %d %d ", toInt(image[3 * i]), toInt(image[3 * i + 1]), toInt(image[3 * i + 2])); 
+		fclose(f); 
+	}
+
+	free(image);
+	free(img);
+	MPI_Finalize();
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+/*while(actual<end){
 
 			int i=actual/w;
 			int j=actual%w;
@@ -796,73 +921,3 @@ int main(int argc, char **argv)
 				}
 			}
 		}*/
-		
-
-	}
-
-	/*printf("\nProcess %d a finit : Avant Bcast: nbr_process_fini=%d\n",rang, nbr_process_fini);
-	nbr_process_fini++;
-	MPI_Bcast(&nbr_process_fini, 1, MPI_INTEGER, rang, MPI_COMM_WORLD);
-	printf("\nProcess %d a finit :Après Bcast nbr_process_fini=%d\n",rang, nbr_process_fini );
-*/
-		while(nbr_process_fini<size|| nbr_dette_process!=0){
-			//printf("Process %d nbr_process_fini=%d\n",rang, nbr_process_fini );
-			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-				if(flag){ //Si on reçoit un message
-					process_tag=status.MPI_TAG;
-     				num_process= status.MPI_SOURCE;
-     				MPI_Get_count(&status, MPI_DOUBLE, &count);
-					if(process_tag<size){ // si il s'agit d'un processus qui propose son aide, on fait suivre sa requète au prochain process modulo size
-     					MPI_Recv(&temp,1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
-     					MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD); 
-     					nbr_process_fini++;
-						printf("\n\nBoucle 4: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n nbr_process_fini=%d\n\n",rang, num_process, process_aidee, nbr_process_fini );
-     				}else if(process_tag==size+1){//Si on reçoit un retour de travail
-     						
-     					MPI_Recv(img+reper_process[num_process]*3, count, MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-     					nbr_dette_process--;
-     					printf("\n\n Boucle 4: Le process de rang %d reçoit RETOUR de travail de la part de process%d:  count=%d \n",rang,num_process, count);
-     				}else if(process_tag==size+2){
-     					MPI_Recv(&temp,1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
-     					nbr_process_fini++;
-     					printf("Boucle 4: process %d:  reçoit que le process %d a finit;  nbr_process_fini=%d\n",rang, temp, nbr_process_fini );
-     				}
-     			
-				}
-				
-
-			}
-
-
-
-	printf("Rang=%d: Avant Le MPI_Gather!!!\n w*h/size=%d \n", rang, w*h/size);
-	MPI_Gather(img, 3*w*h/size, MPI_DOUBLE, image, 3*w*h/size, MPI_DOUBLE, 0, MPI_COMM_WORLD );
-
-	free(reper_process);
-	
-	
-	fprintf(stderr, "\n");
-
-	/* stocke l'image dans un fichier au format NetPbm */
-	{
-		struct passwd *pass; 
-		char nom_sortie[100] = "";
-		char nom_rep[30] = "";
-
-		pass = getpwuid(getuid()); 
-		sprintf(nom_rep, "/tmp/%s", pass->pw_name);
-		mkdir(nom_rep, S_IRWXU);
-		sprintf(nom_sortie, "%s/image.ppm", nom_rep);
-		
-		FILE *f = fopen(nom_sortie, "w");
-		fprintf(f, "P3\n%d %d\n%d\n", w, h, 255); 
-		for (int i = 0; i < w * h; i++) 
-	  		fprintf(f,"%d %d %d ", toInt(image[3 * i]), toInt(image[3 * i + 1]), toInt(image[3 * i + 2])); 
-		fclose(f); 
-	}
-
-	free(image);
-	free(img);
-	MPI_Finalize();
-	return 0;
-}
