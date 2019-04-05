@@ -12,12 +12,13 @@
 #include <stdlib.h> 
 #include <stdio.h>
 #include <stdbool.h>
+#include <mpi.h>
 #include <sys/time.h>
 #include <sys/stat.h>  /* pour mkdir    */ 
 #include <unistd.h>    /* pour getuid   */
 #include <sys/types.h> /* pour getpwuid */
 #include <pwd.h>       /* pour getpwuid */
-
+#include <time.h>
 
 enum Refl_t {DIFF, SPEC, REFR};   /* types de matériaux (DIFFuse, SPECular, REFRactive) */
 
@@ -29,6 +30,12 @@ struct Sphere {
 	enum Refl_t refl;       /* type de reflection */
 	double max_reflexivity;
 };
+
+double my_gettimeofday(){
+  struct timeval tmp_time;
+  gettimeofday(&tmp_time, NULL);
+  return tmp_time.tv_sec + (tmp_time.tv_usec * 1.0e-6L);
+}
 
 static const int KILL_DEPTH = 7;
 static const int SPLIT_DEPTH = 4;
@@ -387,6 +394,8 @@ int main(int argc, char **argv)
 		}
 	}
 
+	 /* debut du chronometrage */
+  	double debut = my_gettimeofday();
 
 	int rang, size, tag=10;
   	MPI_Init(&argc, &argv);
@@ -395,9 +404,14 @@ int main(int argc, char **argv)
   	MPI_Status status;
 
 
+  	//double *image = malloc(3 * w * h * sizeof(*image));
   	if (rang==0)
+
   	{
-  		double *image = malloc(3 * w * h * sizeof(*image));
+  		int count;
+  		int num_process;
+  		//double *image = malloc(3 * w * h * sizeof(*image));
+		double *image = malloc(3 * w * h * sizeof(double));
 		if (image == NULL) {
 			perror("Impossible d'allouer l'image");
 			exit(1);
@@ -415,21 +429,48 @@ int main(int argc, char **argv)
 			MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
       		MPI_Get_count(&status, MPI_UNSIGNED_CHAR, &count);
       		num_process= status.MPI_SOURCE;
-			MPI_Recv(image+h-1 + 3*ouvrier_tache[num_process]*w, count , MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+			MPI_Recv(image+ 3*(h-1 - ouvrier_tache[num_process])*w, count , MPI_DOUBLE, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
 			if (affected==h) //Toutes les lignes ont été faite
      		{
         		int temp=0;
         		MPI_Send(&temp, 1, MPI_UNSIGNED, num_process, 0/*tag*/, MPI_COMM_WORLD); 
-        		nstop++; 
+        		nbr_process_fini++; 
      		}else{ 
         		MPI_Send(&affected, 1, MPI_UNSIGNED, num_process, 10/*tag*/, MPI_COMM_WORLD); 
         		ouvrier_tache[num_process]=affected;
        			affected++;
        		}
 
-
+       		//printf("affected=%d", affected);
 		}
+		//printf("image[7]=%f", image[100]);
 
+
+		//printf("rang=%d\n",rang );
+		struct passwd *pass; 
+		char nom_sortie[100] = "";
+		char nom_rep[30] = "";
+		//printf("image[7]=%f", image[f]);
+		pass = getpwuid(getuid()); 
+		//sprintf(nom_rep, "/tmp/%s", pass->pw_name);
+		sprintf(nom_rep, "%s", pass->pw_name);
+		printf("nom répertoir %s\n", nom_rep);
+		if(mkdir(nom_rep, S_IRWXU)==0)
+			printf("Problème création dossier %s\n",nom_rep );
+		sprintf(nom_sortie, "%s/image_test.ppm", nom_rep);
+		
+		FILE *f = fopen(nom_sortie, "w");
+		if(f==NULL)
+			printf("Problème création %s\n",nom_sortie );
+		fprintf(f, "P3\n%d %d\n%d\n", w, h, 255); 
+		for (int i = 0; i < w * h; i++) 
+	  		fprintf(f,"%d %d %d ", toInt(image[3 * i]), toInt(image[3 * i + 1]), toInt(image[3 * i + 2])); 
+		fclose(f); 
+		free(image);
+
+		double fin = my_gettimeofday();
+		fprintf( stderr, " Temps total de calcul : %g sec\n",
+     	fin - debut);
 
   	}
 
@@ -485,11 +526,12 @@ int main(int argc, char **argv)
 			//copy(pixel_radiance, image + 3 * ((i) * w + j)); // <-- retournement vertical
 		}
 
-		MPI_Send(img, w, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
+		MPI_Send(img, w*3, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
 
 		while(continu){
-			MPI_Recv(&tache, 1, MPI_UNSIGNED, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			MPI_Recv(&ligne, 1, MPI_UNSIGNED, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
       		//printf("continu= %d\n", continu);
+      	//	printf("process %d", rang);
      		if (status.MPI_TAG==0)
       		{
         		continu=false;
@@ -534,11 +576,11 @@ int main(int argc, char **argv)
 					//copy(pixel_radiance, image + 3 * ((i) * w + j)); // <-- retournement vertical
 				}
 
-				MPI_Send(img, w, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
+				MPI_Send(img, w*3, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
 
    	   		}
 		}
-		free(img)
+		free(img);
 	}
 
 
@@ -547,24 +589,31 @@ int main(int argc, char **argv)
 	fprintf(stderr, "\n");
 
 	/* stocke l'image dans un fichier au format NetPbm */
-	if(rang==0){
+	/*if(rang==0){
+		
+		printf("rang=%d\n",rang );
 		struct passwd *pass; 
 		char nom_sortie[100] = "";
 		char nom_rep[30] = "";
-
+		//printf("image[7]=%f", image[f]);
 		pass = getpwuid(getuid()); 
 		sprintf(nom_rep, "/tmp/%s", pass->pw_name);
-		mkdir(nom_rep, S_IRWXU);
+		printf("nom répertoir %s\n", nom_rep);
+		if(mkdir(nom_rep, S_IRWXU)==0)
+			printf("Problème création dossier %s\n",nom_rep );
 		sprintf(nom_sortie, "%s/image_test.ppm", nom_rep);
 		
 		FILE *f = fopen(nom_sortie, "w");
+		if(f==NULL)
+			printf("Problème création %s\n",nom_sortie );
 		fprintf(f, "P3\n%d %d\n%d\n", w, h, 255); 
 		for (int i = 0; i < w * h; i++) 
 	  		fprintf(f,"%d %d %d ", toInt(image[3 * i]), toInt(image[3 * i + 1]), toInt(image[3 * i + 2])); 
 		fclose(f); 
 		free(image);
-	}
+	
 
+}*/
 	MPI_Finalize();
-	return 0;	
+	//return 0;	
 }
