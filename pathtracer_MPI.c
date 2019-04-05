@@ -361,6 +361,12 @@ int toInt(double x)
 	return pow(x, 1 / 2.2) * 255 + .5;   /* gamma correction = 2.2 */
 } 
 
+void affiche_tab(double im[], int start, int end){
+	for(int i=start; i<end; i++){
+		printf("im[%d]=%f\n ",i, im[i]);
+	}
+}
+
 int main(int argc, char **argv)
 { 
 	/* Petit cas test (small, quick and dirty): */
@@ -438,12 +444,13 @@ int main(int argc, char **argv)
   		image=malloc(sizeof(double));
   	}
 
-  	if(rang==size-1){
+  	img=malloc(3*w*h/size*sizeof(double));
+  	/*if(rang==size-1){
   		img=malloc((3*w*h/size +3*w*h%size)*sizeof(double)); //Si le nombre de pixel de l'image n'est pas un multiple du nombre de procesus, le dernier process prend les pixels qui restent
   	}else{
   		img=malloc(3*w*h/size*sizeof(double));
   	}
-  	
+  	*/
 	if (img == NULL) {
 		perror("\nImpossible d'allouer de l'espace dans un process\n");
 		exit(1);
@@ -609,7 +616,7 @@ int main(int argc, char **argv)
 					}else{
 						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, process_tag, MPI_COMM_WORLD,&status);
 						
-						MPI_Send(&temp, 1, MPI_INTEGER, process_aidee, process_tag, MPI_COMM_WORLD);
+						MPI_Send(&temp, 1, MPI_INTEGER, (rang+1)%size, process_tag, MPI_COMM_WORLD);
 						nbr_process_fini++;
 						printf("\n\nBoucle 2: process %d rang reçoit demande de travail de la part de %d\n MAIS transfert la demande à %d\n\n",rang, num_process, process_aidee );
 						printf("  process_aidee=%d, process_tag=%d, nbr_process_fini=%d\n", process_aidee, process_tag, nbr_process_fini);
@@ -775,17 +782,23 @@ int main(int argc, char **argv)
 
 
 
-	printf("size(image)=%lu\n",(sizeof(image)/(3*sizeof(double))) );
+	//printf("size(image)=%lu\n",(sizeof(image)/(3*sizeof(double))) );
 	printf("Rang=%d: Avant Le MPI_Gather!!!\n w*h/size=%d, size(img)=%lu \n", rang, w*h/size, (sizeof(img)/(3*sizeof(double))));
 	
 	//MPI_Gather(img, 3*w*h/size, MPI_DOUBLE, image, 3*w*h/size, MPI_DOUBLE, 0, MPI_COMM_WORLD );
+	printf("process %d avant fin\n", rang);
 
+	//affiche_tab(image,2*h*w*3/size, (2+1)*h*w*3/size );
 
 	if(rang==0){
 		for (int i = 1; i < size; ++i)
 		{
 			printf("i=%d\n",i );
 			MPI_Recv(image+i*h*w*3/size, h*w*3/size, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD,&status);
+			//affiche_tab(image,i*h*w*3/size, (i+1)*h*w*3/size );
+			//affiche_tab(image,0, h*w*3 );
+			
+			printf("i=%d\n",i );
 		}
 	}else{
 		MPI_Send(img, h*w*3/size, MPI_DOUBLE, 0, 10, MPI_COMM_WORLD);
@@ -797,14 +810,17 @@ int main(int argc, char **argv)
 	
 	fprintf(stderr, "\n");
 
+
 	/* stocke l'image dans un fichier au format NetPbm */
+	if(rang==0)
 	{
 		struct passwd *pass; 
 		char nom_sortie[100] = "";
 		char nom_rep[30] = "";
 
 		pass = getpwuid(getuid()); 
-		sprintf(nom_rep, "/tmp/%s", pass->pw_name);
+		//sprintf(nom_rep, "/tmp/%s", pass->pw_name);
+		sprintf(nom_rep, "%s", pass->pw_name);
 		mkdir(nom_rep, S_IRWXU);
 		sprintf(nom_sortie, "%s/image.ppm", nom_rep);
 		
@@ -813,10 +829,15 @@ int main(int argc, char **argv)
 		for (int i = 0; i < w * h; i++) 
 	  		fprintf(f,"%d %d %d ", toInt(image[3 * i]), toInt(image[3 * i + 1]), toInt(image[3 * i + 2])); 
 		fclose(f); 
-	}
+		free(image);
+	}		
 
-	free(image);
+
 	free(img);
+	
+	printf("Process %d  FIN\n", rang);
+	
+	
 	MPI_Finalize();
 	return 0;
 }

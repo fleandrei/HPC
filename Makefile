@@ -22,10 +22,10 @@ pathtracer_patron: pathtracer_patron.c
 	mpicc -o $@ $^ $(LDFLAGS)
 
 exec: pathtracer_MPI
-	mpirun -n 2 -hostfile $(HOST) $(MAP) ./$^ 10
+	mpirun -n 10 -hostfile $(HOST) $(MAP) ./$^ 10
 	
 test:pathtracer_patron
-	mpirun -n 10 -hostfile $(HOST) $(MAP) ./$^ 200
+	mpirun -n 5 -hostfile $(HOST) $(MAP) ./$^ 200
 
 
 clean :
