@@ -4,7 +4,7 @@ CFLAGS=-Iinc
 
 LDFLAGS=-lm 
 
-BIN=pathtracer pathtracer_MPI pathtracer_patron
+BIN=pathtracer pathtracer_MPI pathtracer_patron pathtracer_auto
 
 HOST=hostfile
 
@@ -21,8 +21,11 @@ pathtracer_MPI: pathtracer_MPI.c
 pathtracer_patron: pathtracer_patron.c
 	mpicc -o $@ $^ $(LDFLAGS)
 
-exec: pathtracer_MPI
-	mpirun -n 10 -hostfile $(HOST) $(MAP) ./$^ 10
+pathtracer_auto: pathtracer_auto.c
+	mpicc -o $@ $^ $(LDFLAGS)
+
+exec: pathtracer_auto
+	mpirun -n 2 -hostfile $(HOST) $(MAP) ./$^ 10
 	
 test:pathtracer_patron
 	mpirun -n 5 -hostfile $(HOST) $(MAP) ./$^ 200
