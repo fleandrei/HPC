@@ -25,7 +25,7 @@ pathtracer_auto: pathtracer_auto.c
 	mpicc -o $@ $^ $(LDFLAGS)
 
 exec: pathtracer_auto
-	mpirun -n 3 -hostfile $(HOST) $(MAP) ./$^ 10
+	mpirun -n 18 -hostfile $(HOST) $(MAP) ./$^ 10
 	
 test:pathtracer_patron
 	mpirun -n 5 -hostfile $(HOST) $(MAP) ./$^ 200
