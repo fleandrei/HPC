@@ -523,7 +523,7 @@ int main(int argc, char **argv)
    					MPI_Get_count(&status, MPI_DOUBLE, &count);
 					if(tag==0){ 
    						temp=(end-actual)/2;
-   						if(temp>100){//Si on a du travail à lui donner
+   						if(temp>50){//Si on a du travail à lui donner
      					
    							travail_info[0]=actual+temp;  
    							travail_info[1]=end;
