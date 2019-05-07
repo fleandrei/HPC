@@ -428,7 +428,7 @@ int main(int argc, char **argv)
   	
   	
   	double *image;  	
-  	int *travail_info=malloc(2*sizeof(int));
+  	int *message=malloc(2*sizeof(int));
   	if (travail_info == NULL) {
 			perror("\nImpossible d'allouer travail_info\n");
 			exit(1);
@@ -466,114 +466,134 @@ int main(int argc, char **argv)
 	int flag=0;
 	int num_process;
 	
-	int temp=0;
+	int temp[2];
 	int indice_retour=0;
 	bool travail=true;
 	int test=1;
+	int ok=1;  
+
 	//printf("process %d: start=%d, end=%d \n",rang, start, end );
-	
+
+
+	/*DEBUT OMP Région parallèle*/
 	#pragma omp parallel{
 
 		if(omp_get_thread_num()==0){
 
-		while(continu){
+			while(1){
+					
+						//printf("Grande boucle while\n ");
+				/*if(!demande_travail_bool && actual>=end){
+					temp=rang;
+					test=MPI_Bsend(&temp, 1, MPI_INTEGER, (rang+1)%size, 0, MPI_COMM_WORLD); 
+					demande_travail_bool=true;
+					//printf("rang %d  après demande de travail test=%d\n",rang,test);
+				}
+				*/
 				
-					//printf("Grande boucle while\n ");
-			if(!demande_travail_bool && actual>=end){
-				temp=rang;
-				test=MPI_Bsend(&temp, 1, MPI_INTEGER, (rang+1)%size, 0, MPI_COMM_WORLD); 
-				demande_travail_bool=true;
-				//printf("rang %d  après demande de travail test=%d\n",rang,test);
-			}
-			
-			
-			MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-
-				if(flag){//flag=1 : on a reçu un message
-					tag=status.MPI_TAG;
-					num_process=status.MPI_SOURCE;
-					MPI_Get_count(&status, MPI_INTEGER, &count);
-					if(tag==0){
-						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, tag, MPI_COMM_WORLD,&status);
-						if(temp==rang){  //Si il s'agit d'une proposition d'aide que le process courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
-							init_arret =true;
-							MPI_Bsend(&temp, 1, MPI_INTEGER, (rang+1)%size, 2, MPI_COMM_WORLD );
-							//printf("Process %d ATTENTE recoit demande de LUI MEME-> Initie jeton arret\n",rang );
-						}else if(!init_arret){
+				//MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
+				MPI_Recv(message, 2, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status)
+					//if(flag){//flag=1 : on a reçu un message
+						tag=status.MPI_TAG;
+						num_process=status.MPI_SOURCE;
+						//MPI_Get_count(&status, MPI_INTEGER, &count);
+						if(tag==0){
+							//MPI_Recv(&temp, 1, MPI_INTEGER, num_process, tag, MPI_COMM_WORLD,&status);
+							if(message[0]==rang){  //Si il s'agit d'une proposition d'aide que le process courrant a envoye; cela signifie qu'elle a fait le tour et que tous les pocess ont terminés
+								init_arret =true;								
+								MPI_Bsend(message, 2, MPI_INTEGER, (rang+1)%size, 2, MPI_COMM_WORLD );
+								//printf("Process %d ATTENTE recoit demande de LUI MEME-> Initie jeton arret\n",rang );
+							}else if(!init_arret){
+								num_process=message[0]
+								#pragma omp critical{
+									temp=(end-actual)/2;
+   									if(temp>50){//Si on a du travail à lui donner
+     									
+   										message[0]=actual+temp;  
+   										message[1]=end;
+     									end=actual+temp;
+     									tag=1;     									
+									}else{
+										tag=0;
+										num_process=(rang+1)%size;
+									}
+								//printf("Process %d ATTENTE recoit demande de %d -> transfert à %d\n", rang, temp, (rang+1)%size);
+								}
 							
-							MPI_Bsend(&temp, 1, MPI_INTEGER, (rang+1)%size, tag, MPI_COMM_WORLD);
-							//printf("Process %d ATTENTE recoit demande de %d -> transfert à %d\n", rang, temp, (rang+1)%size);
-						}
-						
-					}else if(tag==1){ 
-						
-						demande_travail_bool=false;					
-						MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-						actual=travail_info[0];
-						end=travail_info[1];
-						//printf("Process %d ATTENTE recoit CHARGE TRAVAIL de %d avec actual=%d et end=%d\n",rang, num_process, actual, end );
-					}else if(tag==2){ //
-						
-						MPI_Recv(&temp, 1, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
-						//printf("Process %d ATTENTE recoit jeton ARRET \n",rang );
-						if(!init_arret){
-							MPI_Bsend(&temp, 1, MPI_INTEGER, (rang+1)%size, 2, MPI_COMM_WORLD);
-							//printf("Et le fait passer\n");
-						}
+							MPI_Bsend(message, 2, MPI_INTEGER, num_process , tag, MPI_COMM_WORLD);
+							}
+						}else if(tag==1){ 
+							#pragma omp critical{
+								demande_travail_bool=false;
+								actual=message[0];
+								end=message[1];
+							}
+												
+							//MPI_Recv(travail_info, 2, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+							
+							//printf("Process %d ATTENTE recoit CHARGE TRAVAIL de %d avec actual=%d et end=%d\n",rang, num_process, actual, end );
+						}else if(tag==2){ //
+							
+							//MPI_Recv(&temp, 1, MPI_INTEGER, num_process, status.MPI_TAG, MPI_COMM_WORLD, &status);
+							//printf("Process %d ATTENTE recoit jeton ARRET \n",rang );
+							if(!init_arret){
+								MPI_Bsend(message, 2, MPI_INTEGER, (rang+1)%size, 2, MPI_COMM_WORLD);
+								//printf("Et le fait passer\n");
+							}
 
-						continu=false;
-					}
-					flag=0;
-				}
-				
-		}
-
-	}else{
-		while(actual<end){
+							continu=false;
+							break;
+						}
+						//flag=0;
+					//}
 					
-			int i=actual/w;
-			int j=actual%w;
-			unsigned short PRNG_state[3] = {0, 0, i*i*i};
-			double pixel_radiance[3] = {0, 0, 0};
-			for (int sub_i = 0; sub_i < 2; sub_i++) {
-				for (int sub_j = 0; sub_j < 2; sub_j++) {
-					double subpixel_radiance[3] = {0, 0, 0};
-					// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
-					for (int s = 0; s < samples; s++) { 
-						// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
-						double r1 = 2 * erand48(PRNG_state);
-						double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
-						double r2 = 2 * erand48(PRNG_state);
-						double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
-						double ray_direction[3];
-						copy(camera_direction, ray_direction);
-						axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
-						axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
-						normalize(ray_direction);
-						double ray_origin[3];
-						copy(camera_position, ray_origin);
-						axpy(140, ray_direction, ray_origin);
-					
-									// estime la lumiance qui arrive sur la caméra par ce rayon 
-						double sample_radiance[3];
-						radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
-									// fait la moyenne sur tous les rayons 
-						axpy(1. / samples, sample_radiance, subpixel_radiance);
-					}
-					clamp(subpixel_radiance);
-							// fait la moyenne sur les 4 sous-pixels 
-					axpy(0.25, subpixel_radiance, pixel_radiance);
-				}
 			}
-						
-			copy(pixel_radiance, image + 3 * actual); 
-						
 
+		}else{
+			while(actual<end){
 				
-					
-		}
-	}//Fin de else
+						
+				if(ok){
+					int i=actual/w;
+					int j=actual%w;
+					unsigned short PRNG_state[3] = {0, 0, i*i*i};
+					double pixel_radiance[3] = {0, 0, 0};
+					for (int sub_i = 0; sub_i < 2; sub_i++) {
+						for (int sub_j = 0; sub_j < 2; sub_j++) {
+							double subpixel_radiance[3] = {0, 0, 0};
+							// simulation de monte-carlo : on effectue plein de lancers de rayons et on moyenne 
+							for (int s = 0; s < samples; s++) { 
+								// tire un rayon aléatoire dans une zone de la caméra qui correspond à peu près au pixel à calculer 
+								double r1 = 2 * erand48(PRNG_state);
+								double dx = (r1 < 1) ? sqrt(r1) - 1 : 1 - sqrt(2 - r1); 
+								double r2 = 2 * erand48(PRNG_state);
+								double dy = (r2 < 1) ? sqrt(r2) - 1 : 1 - sqrt(2 - r2);
+								double ray_direction[3];
+								copy(camera_direction, ray_direction);
+								axpy(((sub_i + .5 + dy) / 2 + i) / h - .5, cy, ray_direction);
+								axpy(((sub_j + .5 + dx) / 2 + j) / w - .5, cx, ray_direction);
+								normalize(ray_direction);
+								double ray_origin[3];
+								copy(camera_position, ray_origin);
+								axpy(140, ray_direction, ray_origin);
+							
+											// estime la lumiance qui arrive sur la caméra par ce rayon 
+								double sample_radiance[3];
+								radiance(ray_origin, ray_direction, 0, PRNG_state, sample_radiance);
+											// fait la moyenne sur tous les rayons 
+								axpy(1. / samples, sample_radiance, subpixel_radiance);
+							}
+							clamp(subpixel_radiance);
+									// fait la moyenne sur les 4 sous-pixels 
+							axpy(0.25, subpixel_radiance, pixel_radiance);
+						}
+					}
+								
+					copy(pixel_radiance, image + 3 * actual); 
+				}
 
+			}
+		}//Fin de else
 	}//FIN De Région PARALLELE
 
 
