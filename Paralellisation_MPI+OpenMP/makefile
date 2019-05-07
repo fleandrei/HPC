@@ -4,7 +4,7 @@ CFLAGS=-Iinc
 
 LDFLAGS=-lm 
 
-BIN= pathtracer_auto
+BIN= pathtracer_OMP
 
 HOST=hostfile
 
@@ -16,10 +16,10 @@ all : $(BIN)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 
-pathtracer_auto: pathtracer_auto.c
-	mpicc -o $@ $^ $(LDFLAGS)
+pathtracer_OMP: pathtracer_OMP.c
+	mpicc -o $@ $^ $(LDFLAGS) -fopenmp
 
-exec: pathtracer_auto
+exec: pathtracer_OMP
 	mpirun -n 18 -hostfile $(HOST) $(MAP) ./$^ 10
 	
 
