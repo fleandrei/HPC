@@ -1,4 +1,4 @@
-# HPC (parallel processing) - realistic phot rendering in global illumintion:
+# HPC (parallel processing) - realistic photo rendering in global illumintion:
 
 #To get the Photo using MPI library :
 - Go to "Parallelisation_MPI"
