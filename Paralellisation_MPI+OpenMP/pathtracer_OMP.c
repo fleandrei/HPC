@@ -457,7 +457,6 @@ int main(int argc, char **argv)
 	int end=(rang==size-1)? start + w*h/size + w*h%size : start+w*h/size;
 	int actual=start;
 	
-	
 	bool continu=true;
 	bool init_arret=false;
 	bool travail_vole_bool=false;
@@ -470,7 +469,7 @@ int main(int argc, char **argv)
 	int indice_retour=0;
 	bool travail=true;
 	int test=1;
-	int ok=1;  
+
 
 	//printf("process %d: start=%d, end=%d \n",rang, start, end );
 
@@ -505,7 +504,8 @@ int main(int argc, char **argv)
 								//printf("Process %d ATTENTE recoit demande de LUI MEME-> Initie jeton arret\n",rang );
 							}else if(!init_arret){
 								num_process=message[0]
-								#pragma omp critical{
+								#pragma omp critical
+								{
 									temp=(end-actual)/2;
    									if(temp>50){//Si on a du travail à lui donner
      									
@@ -523,7 +523,8 @@ int main(int argc, char **argv)
 							MPI_Bsend(message, 2, MPI_INTEGER, num_process , tag, MPI_COMM_WORLD);
 							}
 						}else if(tag==1){ 
-							#pragma omp critical{
+							#pragma omp critical
+							{
 								demande_travail_bool=false;
 								actual=message[0];
 								end=message[1];
@@ -550,12 +551,36 @@ int main(int argc, char **argv)
 			}
 
 		}else{
-			while(actual<end){
+			int pixel;
+			bool travail=true;  
+
+			while(1){
+
+				#pragma omp critical
+				{
+					pixel=actual;
+					actual++;
+					travail=(pixel<end)
+				}
+
+				if(!travail && !continu){
+					break;
+				}
+
+				if (!travail && !demande_travail_bool && continu)
+				{
+					demande_travail_bool=true;
+					#pragma omp single
+					{
+						message[0]=rang;
+						MPI_Bsend(message, 2, MPI_INTEGER, (rang+1)%size, 0, MPI_COMM_WORLD);
+					}
+					
+				}
 				
-						
-				if(ok){
-					int i=actual/w;
-					int j=actual%w;
+				if(travail){
+					int i=pixel/w;
+					int j=pixel%w;
 					unsigned short PRNG_state[3] = {0, 0, i*i*i};
 					double pixel_radiance[3] = {0, 0, 0};
 					for (int sub_i = 0; sub_i < 2; sub_i++) {
@@ -589,7 +614,7 @@ int main(int argc, char **argv)
 						}
 					}
 								
-					copy(pixel_radiance, image + 3 * actual); 
+					copy(pixel_radiance, image + 3 * pixel); 
 				}
 
 			}
