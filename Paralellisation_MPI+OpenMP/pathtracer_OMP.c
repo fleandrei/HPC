@@ -416,8 +416,8 @@ int main(int argc, char **argv)
 
 	/*DEBUT MPI*/
 	
-	int rang, size, tag=10;
-  	MPI_Init(&argc, &argv);
+	int rang, size, provided, tag=10;
+  	MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
   	MPI_Comm_size(MPI_COMM_WORLD, &size);
   	MPI_Comm_rank(MPI_COMM_WORLD, &rang);
   	MPI_Status status;
@@ -429,8 +429,8 @@ int main(int argc, char **argv)
   	
   	double *image;  	
   	int *message=malloc(2*sizeof(int));
-  	if (travail_info == NULL) {
-			perror("\nImpossible d'allouer travail_info\n");
+  	if (message == NULL) {
+			perror("\nImpossible d'allouer \"message\" \n");
 			exit(1);
 		}
   
@@ -446,12 +446,13 @@ int main(int argc, char **argv)
 
 	
 		double* imagefin= malloc(3 * w * h * sizeof(double));
-		if (image == NULL) {
+		if (imagefin == NULL) {
 		perror("\nImpossible d'allouer l'imagefin\n");
 		exit(1);
 		}
   	
   	
+
 
 	int start=w*h/size*rang;
 	int end=(rang==size-1)? start + w*h/size + w*h%size : start+w*h/size;
@@ -465,7 +466,7 @@ int main(int argc, char **argv)
 	int flag=0;
 	int num_process;
 	
-	int temp[2];
+	int temp;
 	int indice_retour=0;
 	bool travail=true;
 	int test=1;
@@ -475,7 +476,7 @@ int main(int argc, char **argv)
 
 
 	/*DEBUT OMP Région parallèle*/
-	#pragma omp parallel{
+	#pragma omp parallel num_threads(2){
 
 		if(omp_get_thread_num()==0){
 
@@ -491,7 +492,7 @@ int main(int argc, char **argv)
 				*/
 				
 				//MPI_Iprobe(  MPI_ANY_SOURCE, MPI_ANY_TAG,  MPI_COMM_WORLD,  &flag,  &status);
-				MPI_Recv(message, 2, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status)
+				MPI_Recv(message, 2, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 					//if(flag){//flag=1 : on a reçu un message
 						tag=status.MPI_TAG;
 						num_process=status.MPI_SOURCE;
@@ -503,7 +504,7 @@ int main(int argc, char **argv)
 								MPI_Bsend(message, 2, MPI_INTEGER, (rang+1)%size, 2, MPI_COMM_WORLD );
 								//printf("Process %d ATTENTE recoit demande de LUI MEME-> Initie jeton arret\n",rang );
 							}else if(!init_arret){
-								num_process=message[0]
+								num_process=message[0];
 								#pragma omp critical
 								{
 									temp=(end-actual)/2;
@@ -560,7 +561,7 @@ int main(int argc, char **argv)
 				{
 					pixel=actual;
 					actual++;
-					travail=(pixel<end)
+					travail=(pixel<end);
 				}
 
 				if(!travail && !continu){
@@ -662,11 +663,11 @@ int main(int argc, char **argv)
 		fclose(f); 
 		free(imagefin);
 		
-		fprintf( stdout, "Pour w=%d, h=%d et samples=%d;  le temps de calcul est %g s\n",
-	   	w,h,samples, (fin - debut));
-	}		
+		fprintf( stdout, "Pour w=%d, h=%d et samples=%d;  le temps de calcul est %g s\n", w,h,samples, (fin - debut));
+	}
 
 	free(image);
+	free(message);
 	//free(img);
 	
 	//printf("Process %d  FIN\n", rang);
@@ -675,6 +676,5 @@ int main(int argc, char **argv)
 	MPI_Finalize();
 	return 0;
 }
-
 
 
